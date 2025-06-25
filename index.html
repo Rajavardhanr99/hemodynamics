@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Hemodynamics Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #101010;
+            --bg-secondary: #1d1d1f;
+            --bg-tertiary: #2c2c2e;
+            --text-primary: #f5f5f7;
+            --text-secondary: #a1a1a6;
+            --accent-blue: #007aff;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Base styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Main layout and panels */
+        .panel {
+            background-color: var(--bg-secondary);
+            border-radius: 1.25rem; /* 20px */
+            border: 1px solid var(--border-color);
+            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        
+        .panel-header {
+            cursor: pointer;
+            user-select: none;
+            padding: 1.25rem; /* 20px */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.3s ease;
+        }
+        
+        .panel-header:hover {
+            background-color: var(--bg-tertiary);
+        }
+
+        .panel-title {
+            font-size: 1.125rem; /* 18px */
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem; /* 12px */
+        }
+        
+        .panel-content {
+            transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1), padding 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+            overflow: hidden;
+            max-height: 0;
+            padding: 0 1.25rem;
+            opacity: 0;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .panel:not(.collapsed) .panel-content {
+            max-height: 1000px; /* Large enough for content */
+            padding: 1.25rem;
+            opacity: 1;
+        }
+        
+        .toggle-arrow {
+            transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .collapsed .toggle-arrow {
+            transform: rotate(-90deg);
+        }
+
+        /* Vital Signs Display */
+        .vital-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+        .vital-item { 
+            background: rgba(0,0,0,0.2);
+            padding: 1rem;
+            border-radius: 1rem; /* 16px */
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .mini-waveform { width: 100%; height: 40px; margin-bottom: 0.5rem; }
+        .vital-label { font-size: 0.875rem; font-weight: 500; color: var(--text-secondary); }
+        .vital-value { font-size: 2rem; font-weight: 600; line-height: 1.1; }
+        .vital-unit { font-size: 0.8rem; color: var(--text-secondary); margin-left: 4px; }
+        .value-changed { animation: value-flash 0.6s ease; }
+        @keyframes value-flash { 0% { color: #007aff; } 100% { color: var(--text-primary); } }
+        
+        /* Parameter Display */
+        .param-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.75rem; }
+        .param-item {
+            background: var(--bg-primary);
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            text-align: center;
+        }
+        .param-label { font-size: 0.75rem; color: var(--text-secondary); display: block; margin-bottom: 0.25rem; }
+        .param-value { font-size: 1.25rem; font-weight: 600; }
+        .param-unit { font-size: 0.7rem; color: var(--text-secondary); }
+
+        /* Interventions */
+        .intervention-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+        .intervention-btn {
+            background-color: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-weight: 500;
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            border: 1px solid transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            transition: all 0.2s ease-in-out;
+        }
+        .intervention-btn:hover {
+            transform: translateY(-2px);
+            background-color: #3a3a3c;
+            border-color: var(--accent-blue);
+        }
+        .intervention-btn:active {
+            transform: translateY(0);
+        }
+        
+        /* Sliders and Inputs */
+        input[type="range"] {
+            -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: #3a3a3c; border-radius: 3px; outline: none; transition: opacity .2s; cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; width: 20px; height: 20px; background: var(--text-primary); cursor: pointer; border-radius: 50%; border: 4px solid var(--accent-blue);
+        }
+        .app-input { background-color: var(--bg-primary); border: 1px solid var(--border-color); width: 100%; padding: 0.5rem 0.75rem; border-radius: 0.5rem; }
+        .app-button { background-color: var(--accent-blue); color: white; font-weight: 600; padding: 0.75rem 1.5rem; border-radius: 0.75rem; transition: background-color 0.2s ease; }
+        .app-button:hover { background-color: #0056b3; }
+
+        /* Modals and Logs */
+        .modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); backdrop-filter: blur(10px); display:none; align-items:center; justify-content:center; z-index:1000; }
+        .modal-content { background-color: var(--bg-secondary); color: var(--text-primary); padding: 2rem; border-radius: 1.25rem; box-shadow:0 10px 40px rgba(0,0,0,0.5); border: 1px solid var(--border-color); max-width: 600px; text-align: left; }
+        #scenario-log-container { background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 1rem; padding: 1rem; height: 250px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; }
+        .log-entry { margin-bottom: 0.25rem; }
+
+    </style>
+</head>
+<body class="p-4 md:p-6 lg:p-8">
+
+    <div id="message-box" class="modal"><div class="modal-content text-center"></div></div>
+    <div id="history-modal" class="modal"><div class="modal-content"><h2 class="text-2xl font-bold mb-4 text-center">Clinical History</h2><p id="history-modal-content" class="text-gray-300 mb-6"></p><div class="text-center"><button id="close-history-modal" class="app-button">Start Scenario</button></div></div></div>
+    <div id="debrief-modal" class="modal"><div class="modal-content"><h2 class="text-2xl font-bold mb-4 text-center">Scenario Debrief</h2><div id="debrief-modal-content" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div><div class="text-center mt-6"><button id="close-debrief-modal" class="app-button bg-gray-600 hover:bg-gray-700">Return to Simulator</button></div></div></div>
+
+    <header class="flex flex-col md:flex-row justify-between items-center mb-6">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-200">Hemodynamics Studio</h1>
+        <div class="mt-4 md:mt-0 flex items-center gap-4">
+            <select id="scenario-select" class="app-input"><option value="normal">Normal Physiology</option><option value="hypovolemic">Hypovolemic Shock</option><option value="cardiogenic">Cardiogenic Shock</option><option value="adhf">ADHF - Wet & Cold</option><option value="septic">Septic Shock (Warm)</option><option value="rvFailure">RV Failure (PE)</option><option value="ards">ARDS with Sepsis</option><option value="tamponade">Cardiac Tamponade</option><option value="hocm">HOCM with SAM</option></select>
+            <button id="end-scenario-btn" class="app-button bg-yellow-600 hover:bg-yellow-700">End & Debrief</button>
+        </div>
+    </header>
+
+    <main class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <!-- Left Column: Vitals & Data -->
+        <div class="space-y-6">
+            <div class="panel p-5"><h3 class="text-xl font-semibold mb-4">Core Vitals</h3><div class="vital-grid"><div class="vital-item" style="color: #34c759;"><canvas id="ecg-chart" class="mini-waveform"></canvas><div><span class="vital-label">ECG / HR</span><div id="hr-display" class="vital-value">75</div></div></div><div class="vital-item" style="color: #ff3b30;"><canvas id="art-chart" class="mini-waveform"></canvas><div><span class="vital-label">ART</span><div id="art-display" class="vital-value">120/80</div></div></div><div class="vital-item" style="color: #5ac8fa;"><canvas id="spo2-chart" class="mini-waveform"></canvas><div><span class="vital-label">SpO₂</span><div><span id="spo2-display" class="vital-value">99</span><span class="vital-unit">%</span></div></div></div></div></div>
+            
+            <div id="pac-panel" class="panel collapsed"><div class="panel-header"><h3 class="panel-title"><i data-lucide="activity"></i>PAC / PICCO Data</h3><i data-lucide="chevron-down" class="toggle-arrow"></i></div><div class="panel-content"><div class="param-grid"><div class="param-item"><span class="param-label">C.O.</span><span id="co-val" class="param-value">5.0</span><span class="param-unit">L/min</span></div><div class="param-item"><span class="param-label">C.I.</span><span id="ci-val" class="param-value">2.5</span><span class="param-unit">L/m²</span></div><div class="param-item"><span class="param-label">CVP</span><span id="cvp-val" class="param-value">6</span><span class="param-unit">mmHg</span></div><div class="param-item"><span class="param-label">PAP</span><span id="pap-val" class="param-value">25/10</span><span class="param-unit">mmHg</span></div><div class="param-item"><span class="param-label">PCWP</span><span id="pcwp-val" class="param-value">8</span><span class="param-unit">mmHg</span></div><div class="param-item"><span class="param-label">SvO₂</span><span id="svo2-val" class="param-value">75</span><span class="param-unit">%</span></div><div class="param-item"><span class="param-label">PPV</span><span id="ppv-val" class="param-value">8</span><span class="param-unit">%</span></div><div class="param-item"><span class="param-label">SVV</span><span id="svv-val" class="param-value">9</span><span class="param-unit">%</span></div><div class="param-item"><span class="param-label">ELWI</span><span id="elwi-val" class="param-value">5</span><span class="param-unit">mL/kg</span></div></div></div></div>
+            <div id="echo-panel" class="panel collapsed"><div class="panel-header"><h3 class="panel-title"><i data-lucide="heart-pulse"></i>Echocardiography</h3><i data-lucide="chevron-down" class="toggle-arrow"></i></div><div class="panel-content"><div class="param-grid"><div class="param-item"><span class="param-label">LV Function</span><span id="lv-func-val" class="param-value">Normal</span></div><div class="param-item"><span class="param-label">RV Function</span><span id="rv-func-val" class="param-value">Normal</span></div><div class="param-item"><span class="param-label">IVC</span><span id="ivc-val" class="param-value">Nml/>50%</span></div><div class="param-item"><span class="param-label">E/e'</span><span id="e-e-prime-val" class="param-value">8</span></div><div class="param-item"><span class="param-label">E/A Ratio</span><span id="ea-val" class="param-value">1.2</span></div><div class="param-item"><span class="param-label">Valves</span><span id="valve-val" class="param-value">Normal</span></div><div class="param-item"><span class="param-label">LVOT Grad</span><span id="lvotg-val" class="param-value">4</span><span class="param-unit">mmHg</span></div></div></div></div>
+            <div id="vexus-panel" class="panel collapsed"><div class="panel-header"><h3 class="panel-title"><i data-lucide="droplets"></i>VExUS</h3><i data-lucide="chevron-down" class="toggle-arrow"></i></div><div class="panel-content"><div class="flex justify-around items-center"><div class="text-center"><canvas id="hepatic-chart" width="80" height="50"></canvas><span class="text-xs text-gray-400">Hepatic</span></div><div class="text-center"><canvas id="portal-chart" width="80" height="50"></canvas><span class="text-xs text-gray-400">Portal</span></div><div class="text-center"><canvas id="renal-chart" width="80" height="50"></canvas><span class="text-xs text-gray-400">Renal</span></div><div class="text-center bg-blue-900/50 p-3 rounded-xl"><span class="param-label">VExUS Grade</span><span id="vexus-grade-val" class="text-4xl font-bold">0</span></div></div></div></div>
+        </div>
+
+        <!-- Middle Column: Controls -->
+        <div class="space-y-6">
+            <div id="interventions-panel" class="panel"><div class="panel-header"><h3 class="panel-title"><i data-lucide="syringe"></i>Interventions</h3><i data-lucide="chevron-down" class="toggle-arrow"></i></div><div class="panel-content"><div class="intervention-grid"><button id="give-fluids" class="intervention-btn"><i data-lucide="droplet"></i>Fluids 500mL</button><button id="give-norepi" class="intervention-btn"><i data-lucide="zap"></i>Norepinephrine</button><button id="give-dobutamine" class="intervention-btn"><i data-lucide="heart"></i>Dobutamine</button><button id="give-ino" class="intervention-btn"><i data-lucide="wind"></i>Inhaled NO</button><button id="diuresis-btn" class="intervention-btn"><i data-lucide="minus-circle"></i>Diuresis</button><button id="beta-blocker-btn" class="intervention-btn"><i data-lucide="shield"></i>Beta Blocker</button><button id="thrombolysis-btn" class="intervention-btn"><i data-lucide="atom"></i>Thrombolysis</button><button id="pericardiocentesis" class="intervention-btn"><i data-lucide="move-3d"></i>Pericardiocentesis</button><button id="plr-test" class="intervention-btn"><i data-lucide="refresh-cw"></i>PLR Test</button><button id="give-antibiotics" class="intervention-btn"><i data-lucide="bug"></i>Antibiotics</button></div></div></div>
+            <div id="trainer-goals-panel" class="panel collapsed"><div class="panel-header"><h3 class="panel-title"><i data-lucide="crosshair"></i>Trainer Goals</h3><i data-lucide="chevron-down" class="toggle-arrow"></i></div><div class="panel-content"><div class="flex items-center gap-4"><div class="flex-grow"><label class="text-sm text-gray-400">Target MAP (mmHg)</label><input id="target-map-input" type="number" class="app-input" placeholder="e.g., 65"></div><button id="activate-goal-btn" class="app-button">Activate</button></div></div></div>
+            <div id="phys-controls-panel" class="panel collapsed"><div class="panel-header"><h3 class="panel-title"><i data-lucide="sliders-horizontal"></i>Physiological Controls</h3><i data-lucide="chevron-down" class="toggle-arrow"></i></div><div class="panel-content"><div class="space-y-4"><div><label class="text-sm text-gray-400">Heart Rate (<span id="hr-slider-val">75</span>)</label><input type="range" id="hr-slider" min="30" max="200"></div><div><label class="text-sm text-gray-400">Contractility (<span id="contractility-slider-val">100</span>%)</label><input type="range" id="contractility-slider" min="10" max="150"></div><div><label class="text-sm text-gray-400">Preload (<span id="preload-slider-val">100</span>%)</label><input type="range" id="preload-slider" min="20" max="250"></div><div><label class="text-sm text-gray-400">SVR (<span id="svr-slider-val">1000</span>)</label><input type="range" id="svr-slider" min="400" max="2500"></div><div><label class="text-sm text-gray-400">PVR (<span id="pvr-slider-val">150</span>)</label><input type="range" id="pvr-slider" min="50" max="800"></div></div></div></div>
+            <div id="vent-controls-panel" class="panel collapsed"><div class="panel-header"><h3 class="panel-title"><i data-lucide="lungs"></i>Ventilator</h3><i data-lucide="chevron-down" class="toggle-arrow"></i></div><div class="panel-content"><div class="grid grid-cols-2 gap-6"><div><h4 class="font-bold text-center mb-2">Settings</h4><div class="space-y-4"><div><label class="text-sm text-gray-400">PEEP (<span id="peep-slider-val">5</span>)</label><input type="range" id="peep-slider" min="0" max="24"></div><div><label class="text-sm text-gray-400">Tidal Vol (<span id="tv-slider-val">450</span>)</label><input type="range" id="tv-slider" min="200" max="800"></div><div><label class="text-sm text-gray-400">Resp Rate (<span id="rr-slider-val">12</span>)</label><input type="range" id="rr-slider" min="8" max="35"></div></div></div><div><h4 class="font-bold text-center mb-2">Mechanics</h4><div class="param-grid mt-2"><div class="param-item"><span class="param-label">PIP</span><span id="pip-val" class="param-value">25</span></div><div class="param-item"><span class="param-label">Pplat</span><span id="pplat-val" class="param-value">20</span></div><div class="param-item"><span class="param-label">Driving P</span><span id="dp-val" class="param-value">15</span></div><div class="param-item"><span class="param-label">Compliance</span><span id="comp-val" class="param-value">30</span></div></div></div></div></div></div>
+        </div>
+
+        <!-- Right Column: Tools -->
+        <div class="space-y-6">
+             <div id="calculator-panel" class="panel collapsed"><div class="panel-header"><h3 class="panel-title"><i data-lucide="calculator"></i>Hemodynamics Calculator</h3><i data-lucide="chevron-down" class="toggle-arrow"></i></div><div class="panel-content"><div class="grid grid-cols-2 gap-x-4 gap-y-3"><label>MAP</label><input id="calc-map" type="number" class="app-input"><label>CVP</label><input id="calc-cvp" type="number" class="app-input"><label>Mean PAP</label><input id="calc-mpap" type="number" class="app-input"><label>PCWP</label><input id="calc-pcwp" type="number" class="app-input"><div class="col-span-2"><label>Cardiac Output</label><input id="calc-co" type="number" class="app-input"></div><div class="col-span-2 mt-2"><button id="calculate-btn" class="w-full app-button">Calculate</button></div><div class="param-item mt-2"><span class="param-label">SVR</span><span id="calc-svr-out" class="param-value">-</span><span class="param-unit">dyn·s/cm⁵</span></div><div class="param-item mt-2"><span class="param-label">PVR</span><span id="calc-pvr-out" class="param-value">-</span><span class="param-unit">dyn·s/cm⁵</span></div></div></div></div>
+             <div class="panel"><div class="panel-header"><h3 class="panel-title"><i data-lucide="history"></i>Scenario Log</h3></div><div class="p-2"><div id="scenario-log-container"></div></div></div>
+        </div>
+    </main>
+
+    <script>
+    // --- DOM ELEMENT SELECTION ---
+    const scenarioSelect = document.getElementById('scenario-select');
+    const historyModal = document.getElementById('history-modal');
+    const historyContent = document.getElementById('history-modal-content');
+    const closeHistoryBtn = document.getElementById('close-history-modal');
+    const debriefModal = document.getElementById('debrief-modal');
+    const debriefContent = document.getElementById('debrief-modal-content');
+    const closeDebriefBtn = document.getElementById('close-debrief-modal');
+    const messageBox = document.getElementById('message-box');
+    const messageBoxContent = messageBox.querySelector('.modal-content');
+    const logContainer = document.getElementById('scenario-log-container');
+    
+    const displays = {
+        hr: document.getElementById('hr-display'), art: document.getElementById('art-display'), spo2: document.getElementById('spo2-display'), co: document.getElementById('co-val'), ci: document.getElementById('ci-val'), cvp: document.getElementById('cvp-val'), pap: document.getElementById('pap-val'), pcwp: document.getElementById('pcwp-val'), svo2: document.getElementById('svo2-val'), ppv: document.getElementById('ppv-val'), svv: document.getElementById('svv-val'), elwi: document.getElementById('elwi-val'), lvFunc: document.getElementById('lv-func-val'), rvFunc: document.getElementById('rv-func-val'), ivc: document.getElementById('ivc-val'), eePrime: document.getElementById('e-e-prime-val'), vexusGrade: document.getElementById('vexus-grade-val'), eaRatio: document.getElementById('ea-val'), valveStatus: document.getElementById('valve-val'), lvotg: document.getElementById('lvotg-val'), pip: document.getElementById('pip-val'), pplat: document.getElementById('pplat-val'), dp: document.getElementById('dp-val'), compliance: document.getElementById('comp-val')
+    };
+    
+    const sliders = {
+        hr: document.getElementById('hr-slider'), contractility: document.getElementById('contractility-slider'), preload: document.getElementById('preload-slider'), svr: document.getElementById('svr-slider'), pvr: document.getElementById('pvr-slider'), peep: document.getElementById('peep-slider'), tidalVolume: document.getElementById('tv-slider'), respiratoryRate: document.getElementById('rr-slider'),
+    };
+    const sliderVals = {
+        hr: document.getElementById('hr-slider-val'), contractility: document.getElementById('contractility-slider-val'), preload: document.getElementById('preload-slider-val'), svr: document.getElementById('svr-slider-val'), pvr: document.getElementById('pvr-slider-val'), peep: document.getElementById('peep-slider-val'), tidalVolume: document.getElementById('tv-slider-val'), respiratoryRate: document.getElementById('rr-slider-val'),
+    };
+    
+    const buttons = {
+        fluids: document.getElementById('give-fluids'), norepi: document.getElementById('give-norepi'), dobutamine: document.getElementById('give-dobutamine'), ino: document.getElementById('give-ino'), diuresis: document.getElementById('diuresis-btn'), betaBlocker: document.getElementById('beta-blocker-btn'), thrombolysis: document.getElementById('thrombolysis-btn'), antibiotics: document.getElementById('give-antibiotics'), pericardiocentesis: document.getElementById('pericardiocentesis'), endScenario: document.getElementById('end-scenario-btn'), calculate: document.getElementById('calculate-btn'), activateGoal: document.getElementById('activate-goal-btn'),
+        plr: document.getElementById('plr-test'),
+    };
+    const inputs = {
+        targetMAP: document.getElementById('target-map-input'),
+    };
+
+    // --- CHART & SIMULATION STATE ---
+    let charts = {};
+    let simulationState = {};
+    let simulationInterval;
+    let scenarioLog = [];
+    let currentScenarioName = '';
+    let previousValues = {};
+    const BSA = 2.0;
+    const SIMULATION_TICK_MS = 100;
+    let lastGenerated = { hr: 0, systolic: 0, diastolic: 0, vexusGrade: -1 };
+
+    // --- SCENARIO DEFINITIONS ---
+    const baseSettings = { spo2: 99, peep: 5, tidalVolume: 450, respiratoryRate: 12, compliance: 50, resistance: 5, pericardialFluid: 0, infection: 0, antibioticsOnBoard: false, valveStatus: 'Normal', eaRatio: 1.2, lvotg: 4, targetMAP: null, goalSeeking: false, norepiDose: 0, dobutamineDose: 0};
+    const scenarios = {
+        normal: { ...baseSettings, hr: 75, contractility: 100, preload: 100, svr: 1200, pvr: 150 },
+        hypovolemic: { ...baseSettings, hr: 130, contractility: 110, preload: 20, svr: 2000, pvr: 180, respiratoryRate: 18, eaRatio: 1.5, spo2: 96 },
+        cardiogenic: { ...baseSettings, hr: 115, contractility: 15, preload: 200, svr: 2300, pvr: 320, spo2: 88, peep: 8, compliance: 40, valveStatus: 'MR (Mild)', eaRatio: 0.6 },
+        adhf: { ...baseSettings, hr: 95, contractility: 25, preload: 230, svr: 1800, pvr: 380, spo2: 89, peep: 10, compliance: 35, valveStatus: 'MR (Mod)', eaRatio: 0.5 },
+        septic: { ...baseSettings, hr: 125, contractility: 70, preload: 70, svr: 400, pvr: 200, spo2: 92, peep: 6, compliance: 60, infection: 1, eaRatio: 1.0 },
+        rvFailure: { ...baseSettings, hr: 120, contractility: 70, preload: 200, svr: 1100, pvr: 800, spo2: 86, peep: 8, compliance: 45, valveStatus: 'TR (Severe)', eaRatio: 0.7 },
+        ards: { ...baseSettings, hr: 110, contractility: 90, preload: 110, svr: 900, pvr: 350, spo2: 85, peep: 14, tidalVolume: 350, compliance: 25, infection: 0.5 },
+        tamponade: { ...baseSettings, hr: 130, contractility: 90, preload: 100, svr: 1700, pvr: 250, spo2: 94, pericardialFluid: 130, valveStatus: 'Effusion, RA/RV Collapse'},
+        hocm: { ...baseSettings, hr: 80, contractility: 140, preload: 80, svr: 1200, pvr: 160, lvotg: 70, valveStatus: 'SAM / MR', eaRatio: 0.7, spo2: 95 },
+    };
+    const scenarioHistories = {
+        normal: "A stable patient in the ICU for observation post-procedure. No acute complaints.",
+        hypovolemic: "A 45-year-old male involved in a motor vehicle collision arrives with signs of internal bleeding.",
+        cardiogenic: "A 68-year-old female presents with crushing chest pain, diaphoresis, and shortness of breath. ECG shows an anterior STEMI.",
+        adhf: "A 72-year-old with a history of ischemic cardiomyopathy presents with 3 days of worsening dyspnea, orthopnea, and lower extremity edema.",
+        septic: "An 80-year-old nursing home resident is sent to the ED for altered mental status and fever. Urine is cloudy and foul-smelling.",
+        rvFailure: "A 55-year-old who recently underwent a hip replacement develops sudden-onset severe dyspnea and chest pain.",
+        ards: "A 60-year-old patient with pancreatitis develops rapidly worsening hypoxemia and bilateral infiltrates on chest X-ray.",
+        tamponade: "A 34-year-old status-post cardiac surgery day 2 develops sudden hypotension and tachycardia. Chest tube output has ceased.",
+        hocm: "A 22-year-old athlete collapses during practice. He is brought to the ED with hypotension and a harsh systolic murmur.",
+    };
+    
+    // --- WAVEFORM & CHART LOGIC ---
+    const getEcgData = hr => { const p=[0,.1,0,0], q=[0,-.2], r=[.8,1], s=[-.4,0], t=[0,.3,.2,0]; const c=[...p,...q,...r,...s,...t]; const bl=(60/hr)*10; const fl=Math.max(2,Math.floor(bl-c.length)); const f=Array(fl).fill(0); return [...c,...f]; };
+    const getArtData = (sys,dias,hr) => { const pp=Math.max(1,sys-dias); const u=Array.from({length:3},(_,i)=>dias+(pp/3)*(i+1)); const p=[sys,sys*.95]; const d=Array.from({length:5},(_,i)=>sys*.9-(pp*.4/5)*i); const n=[d[d.length-1]*.95,d[d.length-1]*1.05]; const r=Array.from({length:2},(_,i)=>n[1]-((n[1]-dias)/2)*i); const c=[...u,...p,...d,...n,...r]; const bl=(60/hr)*10; const fl=Math.max(2,Math.floor(bl-c.length)); const f=Array(fl).fill(dias); return [...c,...f]; };
+    const getSpo2Data = hr => { const w=[0,.2,.5,.8,1,.9,.6,.3,.1,0]; const bl=(60/hr)*10; const fl=Math.max(2,Math.floor(bl-w.length)); const f=Array(fl).fill(0); return[...w,...f]; };
+    const vexusWaveforms = { hepatic:{g0:[0,-1.2,0,.6,0,-1.2,0,.6,0,0],g1:[0,-.8,0,.8,0,-.8,0,.8,0,0],g2:[0,.4,0,-1,0,.4,0,-1,0,0],g3:[0,1,0,.2,0,1,0,.2,0,0]}, portal:{g0:[1,1,1,1,1,1,1,1,1,1],g1:[1,1.1,1,.9,1,1.1,1,.9,1,1],g2:[1,1.3,1,.7,1,1.3,1,.7,1,1],g3:[1,1.6,.8,.4,1,1.6,.8,.4,1,1]}, renal:{g0:[1,1,1,1,1,1,1,1,1,1],g1:[1,1,.9,1,1,1,.9,1,1,1],g2:[1,.8,.6,1,1,.8,.6,1,1,1],g3:[1,.5,-.2,.5,1,.5,-.2,.5,1,1]} };
+    const getVexusData = (type,grade) => { grade=Math.min(3,Math.max(0,Math.round(grade))); return vexusWaveforms[type][`g${grade}`]; };
+    
+    function createChart(canvasId, color, sMax, sMin) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        const isVexus = canvasId.includes('chart') && !canvasId.includes('ecg') && !canvasId.includes('art') && !canvasId.includes('spo2');
+        return new Chart(ctx, { type: 'line', data: { labels: Array(isVexus ? 10 : 100).fill(''), datasets: [{ data: [], borderColor: color, borderWidth: isVexus ? 2.5 : 2, pointRadius: 0, tension: 0.4 }] }, options: { animation: {duration: 0}, scales: { y: {display:false, suggestedMin: sMin, suggestedMax: sMax }, x: {display: false}}, plugins: {legend: {display:false}, tooltip:{enabled:false}}, layout: {padding: {top:2,bottom:2}}} });
+    }
+
+    function setupCharts() {
+        Object.values(charts).forEach(chart => chart.destroy());
+        charts.ecg = createChart('ecg-chart', '#34c759', 2, -1);
+        charts.art = createChart('art-chart', '#ff3b30', 200, 40);
+        charts.spo2 = createChart('spo2-chart', '#5ac8fa', 1.2, -0.2);
+        charts.hepatic = createChart('hepatic-chart', '#5ac8fa', 1.5, -1.5);
+        charts.portal = createChart('portal-chart', '#ffcc00', 2, 0);
+        charts.renal = createChart('renal-chart', '#ff9500', 2, -0.5);
+    }
+    
+    let waveformDataPoints = {}; let dataIndex=0;
+    function updateWaveforms() {
+        const state=simulationState; const params=calculateDerivedParams(state);
+        if(Math.abs(params.hr-lastGenerated.hr)>2 || Math.abs(params.bp.systolic-lastGenerated.systolic)>4 || !waveformDataPoints.ecg){
+            waveformDataPoints.ecg=getEcgData(params.hr); waveformDataPoints.art=getArtData(params.bp.systolic,params.bp.diastolic,params.hr);
+            waveformDataPoints.spo2=getSpo2Data(params.hr);
+            lastGenerated={hr:params.hr, systolic:params.bp.systolic, diastolic:params.bp.diastolic, vexusGrade:lastGenerated.vexusGrade};
+        }
+        if(params.vexusGrade !== lastGenerated.vexusGrade) {
+            waveformDataPoints.hepatic=getVexusData('hepatic',params.vexusGrade); waveformDataPoints.portal=getVexusData('portal',params.vexusGrade);
+            waveformDataPoints.renal=getVexusData('renal',params.vexusGrade);
+            charts.hepatic.data.datasets[0].data=waveformDataPoints.hepatic; charts.portal.data.datasets[0].data=waveformDataPoints.portal;
+            charts.renal.data.datasets[0].data=waveformDataPoints.renal;
+            charts.hepatic.update('none'); charts.portal.update('none'); charts.renal.update('none');
+            lastGenerated.vexusGrade = params.vexusGrade;
+        }
+        ['ecg','art','spo2'].forEach(name=>{ if(charts[name] && waveformDataPoints[name]?.length>0){ const chart=charts[name]; chart.data.datasets[0].data.push(waveformDataPoints[name][dataIndex%waveformDataPoints[name].length]); if(chart.data.datasets[0].data.length > 100) chart.data.datasets[0].data.shift(); chart.update('none');}});
+        dataIndex++;
+    }
+
+    // --- PHYSIOLOGICAL ENGINE ---
+    function calculateDerivedParams(state) {
+        const tamponade=1-(state.pericardialFluid/150);
+        const peepEffect = state.peep > 8 ? (state.peep - 8) * 3.5 : 0;
+        const effectivePreload = state.preload - peepEffect;
+        let preloadFactor=Math.min(1.5, effectivePreload / 100);
+        const hrFactor = 1 - ((state.hr - 100) / 600);
+        const afterloadFactor=1-((state.svr-1200)/6000);
+        let sv = 75 * (state.contractility / 100) * preloadFactor * afterloadFactor * tamponade * hrFactor;
+        
+        // Disease-Specific Modifications
+        if(currentScenarioName === 'rvFailure') { sv *= (1 - (state.pvr - 150) / 1000); }
+
+        let hocm_gradient = 0;
+        if(state.lvotg > 10 || currentScenarioName === 'hocm') {
+            // Refined HOCM model: increased contractility and reduced preload/afterload DRAMATICALLY worsen the gradient.
+            const base_grad = scenarios.hocm.lvotg || state.lvotg;
+            hocm_gradient = base_grad + (120 - effectivePreload) * 0.8 + (1200 - state.svr) * 0.08 + (state.contractility - 100) * 1.2;
+            hocm_gradient = Math.max(4, hocm_gradient);
+            sv *= (1 - hocm_gradient / 200); // Worsened obstruction has a greater impact on SV
+        }
+
+        sv = Math.max(10,sv); let co=(sv*state.hr)/1000;
+        
+        let cvp=(effectivePreload/100)*8 + (state.pvr-150)/50; if(state.pericardialFluid>0) cvp=state.pericardialFluid/5+2; cvp=Math.max(1,cvp);
+        let map=(co*state.svr)/80+cvp;
+        let pp = sv * 0.9;
+        pp=Math.max(10,pp*tamponade);
+        let systolic=map+(2/3*pp); let diastolic=map-(1/3*pp); if(diastolic<30){diastolic=30;systolic=diastolic+pp;}
+        
+        let pcwp=(effectivePreload/100)*10-((state.contractility-100)/12); if(state.pericardialFluid>0) pcwp=cvp*.95; pcwp=Math.max(3,pcwp); let pap_d=pcwp+2; let pap_s=((co*state.pvr)/80)+pap_d; if(state.pericardialFluid>0){pap_d=cvp;pap_s=cvp+5;}
+        
+        const ppv=25-(effectivePreload/12); const svv=28-(effectivePreload/11); const elwi=3+(effectivePreload/30)-(state.contractility/60)+((state.pvr-150)/120);
+        const lvFunc=state.contractility<50?'Severe↓':state.contractility > 130 ? 'Hyperdynamic' : 'Normal';
+        const rvPvrEffect=(state.pvr-150)/450; const rvFunc=rvPvrEffect>.7?'Severe↓':rvPvrEffect>.4?'Mild↓':'Normal';
+        const ivc=effectivePreload<60?'Small/>50%':effectivePreload>150?'Plethoric/<20%':'Nml/>50%'; const eePrime=8+(pcwp-8)*.8;
+        const vexusGrade=cvp<8?0:cvp<12?1:cvp<16?2:3; const svo2=75+(co-5)*4-(state.hr-75)*.1;
+        const pplat = (state.tidalVolume / state.compliance) + state.peep; const pip = pplat + (state.tidalVolume / 300) * state.resistance; const dp = pplat - state.peep;
+        
+        return { co:Math.max(1,co),ci:Math.max(.5,co/BSA),cvp:Math.max(1,cvp),pap:{systolic:pap_s,diastolic:pap_d},pcwp:Math.max(2,pcwp),svo2:Math.min(95,Math.max(30,svo2)),bp:{systolic,diastolic,map},hr:state.hr,spo2:state.spo2,peep:state.peep,ppv:Math.min(40,Math.max(3,ppv)),svv:Math.min(45,Math.max(4,svv)),elwi:Math.min(30,Math.max(3,elwi)),lvFunc,rvFunc,ivc,eePrime,vexusGrade,lvotg:hocm_gradient,pip,pplat,dp,compliance:state.compliance,resistance:state.resistance,eaRatio:state.eaRatio,valveStatus:state.valveStatus};
+    }
+    
+    // --- UI & STATE UPDATES ---
+    function updateDisplay() {
+        const params=calculateDerivedParams(simulationState);
+        Object.keys(displays).forEach(key => { if(displays[key]){
+            let value, formattedValue;
+            if(key==='art'){
+                value = `${Math.round(params.bp.systolic)}/${Math.round(params.bp.diastolic)}`;
+                formattedValue = `${value} <span class="vital-unit">(${Math.round(params.bp.map)})</span>`;
+                displays.art.innerHTML = formattedValue;
+            } else if(key==='pap'){
+                value = `${Math.round(params.pap.systolic)}/${Math.round(params.pap.diastolic)}`;
+                formattedValue = value;
+                displays.pap.textContent = formattedValue;
+            } else {
+                value = params[key];
+                if(typeof value === 'number') {
+                    formattedValue = value.toFixed(key==='co'||key==='ci'||key==='eaRatio'?1:0);
+                } else {
+                    formattedValue = value;
+                }
+                displays[key].textContent = formattedValue;
+            }
+
+            if(previousValues[key] && previousValues[key] !== formattedValue){
+                displays[key].classList.add('value-changed');
+                setTimeout(() => displays[key].classList.remove('value-changed'), 600);
+            }
+            previousValues[key] = formattedValue;
+        }});
+        Object.keys(sliders).forEach(key => { if(sliders[key]){sliders[key].value=simulationState[key];sliderVals[key].textContent=Math.round(simulationState[key]);}});
+        lucide.createIcons();
+    }
+
+    function simulationTick() {
+        if (simulationState.goalSeeking && simulationState.targetMAP) {
+            const currentMAP = calculateDerivedParams(simulationState).bp.map;
+            const mapDifference = simulationState.targetMAP - currentMAP;
+            simulationState.svr += mapDifference * 6; // slightly less aggressive adjustment
+            simulationState.svr = Math.max(400, Math.min(2500, simulationState.svr));
+        }
+
+        if (simulationState.infection > 0) {
+            const infectionDecayRate = simulationState.antibioticsOnBoard ? 0.005 : 0.0005;
+            simulationState.infection = Math.max(0, simulationState.infection - infectionDecayRate);
+            simulationState.svr += (1200 - simulationState.svr) * 0.005;
+        }
+        
+        updateDisplay(); updateWaveforms();
+    }
+    
+    function logAction(type, message, data = {}) {
+        const timestamp = new Date().toLocaleTimeString('en-US');
+        scenarioLog.push({ timestamp, type, message, data });
+        const p = document.createElement('p'); p.className = 'log-entry';
+        p.innerHTML = `<span class="text-gray-500">${timestamp}</span> &gt; ${message}`;
+        logContainer.appendChild(p); logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    // --- INTERVENTIONS & ACTIONS ---
+    function applyIntervention(effect, duration, message, logData) { 
+        showMessage(message, duration || 3000); 
+        logAction('intervention', message, logData); 
+        for(const p in effect){simulationState[p]+=effect[p];} 
+        if(duration>0) setTimeout(()=>{for(const p in effect){simulationState[p]-=effect[p];}},duration); 
+    }
+    function showMessage(text, duration) { 
+        messageBoxContent.textContent = text;
+        messageBox.style.display = 'flex'; 
+        setTimeout(()=>messageBox.style.display='none', duration); 
+    }
+    
+    function generateDebrief() {
+        if (!simulationInterval) return; 
+        clearInterval(simulationInterval); simulationInterval = null; 
+        logAction("system", "Scenario Ended. Generating Debrief...");
+        const idealActionsMap = { hypovolemic: ["Fluids", "Norepinephrine"], cardiogenic: ["Norepinephrine", "Dobutamine"], adhf: ["Diuresis", "Dobutamine"], septic: ["Fluids", "Norepinephrine", "Antibiotics"], rvFailure: ["Inhaled NO", "Norepinephrine", "Thrombolysis"], ards: ["Antibiotics"], tamponade: ["Pericardiocentesis", "Fluids"], hocm: ["Beta Blocker", "Fluids"] };
+        const userActions = [...new Set(scenarioLog.filter(l => l.type === 'intervention').map(l => l.data.name))];
+        const ideal = idealActionsMap[currentScenarioName] || [];
+        const correct = ideal.filter(action => userActions.includes(action));
+        const missed = ideal.filter(action => !userActions.includes(action));
+        const incorrect = userActions.filter(action => !ideal.includes(action));
+        debriefContent.innerHTML = `<div><h4 class="text-lg font-bold my-2 text-white">Summary:</h4><p>You performed <strong>${correct.length}</strong> correct, <strong>${incorrect.length}</strong> incorrect, and missed <strong>${missed.length}</strong> key actions.</p></div><div><h4 class="text-lg font-bold my-2 text-green-400">Ideal Actions:</h4>${ideal.length>0?ideal.map(a=>`<p>- ${a}</p>`).join(''):'<p>None</p>'}</div><div><h4 class="text-lg font-bold my-2 text-yellow-400">Feedback:</h4>${missed.length>0?`<p class="text-red-400">Missed: ${missed.join(', ')}.</p>`:''}${incorrect.length>0?`<p class="text-orange-400">Incorrect: ${incorrect.join(', ')}.</p>`:''}${missed.length===0&&incorrect.length===0?'<p class="text-green-400">Excellent! You performed all the ideal actions.</p>':''}</div>`;
+        debriefModal.style.display = 'flex';
+    }
+
+    // --- EVENT LISTENERS ---
+    function setupEventListeners() {
+        scenarioSelect.addEventListener('change', e => loadScenario(e.target.value));
+        [closeHistoryBtn, closeDebriefBtn, messageBox].forEach(el => el.addEventListener('click', () => { historyModal.style.display = 'none'; debriefModal.style.display = 'none'; messageBox.style.display = 'none'; }));
+        buttons.endScenario.addEventListener('click', generateDebrief);
+        Object.keys(sliders).forEach(key => { if (sliders[key]) { sliders[key].addEventListener('input', e => { simulationState[key] = parseFloat(e.target.value); logAction('control',`Manual Override: Set ${key} to ${Math.round(e.target.value)}`); }); }});
+        
+        buttons.fluids.addEventListener('click', () => applyIntervention({ preload: 30 }, 0, "Administered Fluids 500mL", {name: "Fluids"}));
+        buttons.norepi.addEventListener('click', () => { simulationState.norepiDose++; applyIntervention({ svr: 180, contractility: 3 }, 0, `Norepinephrine increased (Lvl ${simulationState.norepiDose})`, {name: "Norepinephrine"}); });
+        buttons.dobutamine.addEventListener('click', () => { simulationState.dobutamineDose++; applyIntervention({ contractility: 15, svr: -50, hr: 3 }, 0, `Dobutamine increased (Lvl ${simulationState.dobutamineDose})`, {name: "Dobutamine"}); });
+        buttons.ino.addEventListener('click', () => applyIntervention({ pvr: -150 }, 0, "Started Inhaled NO", {name: "Inhaled NO"}));
+        buttons.diuresis.addEventListener('click', () => applyIntervention({ preload: -30 }, 0, "Initiated Diuresis", {name: "Diuresis"}));
+        buttons.betaBlocker.addEventListener('click', () => applyIntervention({ hr: -15, contractility: -20}, 0, "Administered Beta Blocker", {name: "Beta Blocker"}));
+        buttons.thrombolysis.addEventListener('click', () => { if (currentScenarioName === 'rvFailure') { applyIntervention({ pvr: -450, svr: -150 }, 0, "Administered Thrombolysis", {name: "Thrombolysis"}); } else { showMessage("Thrombolysis not indicated.", 3000); }});
+        buttons.plr.addEventListener('click', () => { const co=calculateDerivedParams(simulationState).co; applyIntervention({ preload: 25 }, 20000, "Performing PLR Test...", {name: "PLR"}); setTimeout(()=>{ const nCO=calculateDerivedParams(simulationState).co; const ch=((nCO-co)/co)*100; showMessage(`PLR Test Result: CO change ${ch.toFixed(1)}%`, 4000); logAction('result', `PLR result: ${ch.toFixed(1)}% change in CO.`);},10000);});
+        buttons.pericardiocentesis.addEventListener('click', () => { if(simulationState.pericardialFluid > 0) { applyIntervention({pericardialFluid: -simulationState.pericardialFluid}, 0, "Performed Pericardiocentesis", {name: "Pericardiocentesis"}); } else { showMessage("No pericardial fluid to drain.", 3000); }});
+        buttons.antibiotics.addEventListener('click', () => { if(simulationState.infection>0) { simulationState.antibioticsOnBoard = true; showMessage("Antibiotics administered.", 3000); logAction("intervention", "Administered Antibiotics", {name: "Antibiotics"}); } else { showMessage("Antibiotics not indicated.", 3000); }});
+
+        buttons.calculate.addEventListener('click', () => {
+            const map=parseFloat(document.getElementById('calc-map').value); const cvp=parseFloat(document.getElementById('calc-cvp').value); const mpap=parseFloat(document.getElementById('calc-mpap').value); const pcwp=parseFloat(document.getElementById('calc-pcwp').value); const co=parseFloat(document.getElementById('calc-co').value);
+            const svr_out=document.getElementById('calc-svr-out'); const pvr_out=document.getElementById('calc-pvr-out');
+            if(map&&cvp&&co&&co>0){ svr_out.textContent = (80*(map-cvp)/co).toFixed(0); } else { svr_out.textContent = '-'; }
+            if(mpap&&pcwp&&co&&co>0){ pvr_out.textContent = (80*(mpap-pcwp)/co).toFixed(0); } else { pvr_out.textContent = '-'; }
+        });
+
+        buttons.activateGoal.addEventListener('click', () => {
+            const target = parseFloat(inputs.targetMAP.value);
+            if (target && target > 40 && target < 120) {
+                simulationState.goalSeeking = !simulationState.goalSeeking;
+                if (simulationState.goalSeeking) {
+                    simulationState.targetMAP = target;
+                    buttons.activateGoal.textContent = 'Deactivate'; buttons.activateGoal.classList.add('bg-yellow-600');
+                    logAction(`system`, `Trainer Goal Activated: Target MAP ${target} mmHg.`);
+                } else {
+                    buttons.activateGoal.textContent = 'Activate'; buttons.activateGoal.classList.remove('bg-yellow-600');
+                    logAction(`system`, `Trainer Goal Deactivated.`);
+                }
+            } else { showMessage("Please enter a valid Target MAP (40-120).", 3000); }
+        });
+        document.querySelectorAll('.panel-header').forEach(header => { header.addEventListener('click', () => header.parentElement.classList.toggle('collapsed')); });
+    }
+
+    // --- INITIALIZATION ---
+    function loadScenario(scenarioName) {
+        if (simulationInterval) clearInterval(simulationInterval);
+        currentScenarioName = scenarioName;
+        simulationState = JSON.parse(JSON.stringify(scenarios[scenarioName]));
+        previousValues = {};
+        
+        historyContent.textContent = scenarioHistories[scenarioName]; historyModal.style.display = 'flex';
+        waveformDataPoints = {}; lastGenerated = {hr:0, systolic:0, diastolic:0, vexusGrade:-1}; dataIndex=0;
+        logContainer.innerHTML = ''; debriefContent.textContent = ''; scenarioLog = [];
+        buttons.activateGoal.textContent = 'Activate'; buttons.activateGoal.classList.remove('bg-yellow-600');
+        inputs.targetMAP.value = '';
+
+        document.querySelectorAll('.panel:not(.collapsed)').forEach(panel => panel.classList.add('collapsed'));
+        document.getElementById('interventions-panel').classList.remove('collapsed');
+
+        Object.values(charts).forEach(c=>{c.data.datasets[0].data=[];c.update('none');});
+        updateDisplay(); 
+        logAction('system', `Scenario loaded: ${scenarioSelect.options[scenarioSelect.selectedIndex].text}`);
+        simulationInterval = setInterval(simulationTick, SIMULATION_TICK_MS);
+    }
+    
+    window.onload = () => {
+        setupCharts();
+        setupEventListeners();
+        loadScenario('normal');
+        lucide.createIcons();
+    };
+    </script>
+</body>
+</html>
+
